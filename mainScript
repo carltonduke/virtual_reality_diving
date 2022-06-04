@@ -1,0 +1,1303 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine.UI;
+using UnityEngine;
+using UnityEngine.Video;
+using System;
+using TMPro;
+using System.Linq;
+
+public class Raycast : MonoBehaviour
+{
+    // Ray Casting, Hands, Sphere, Collision Cube
+    [Header("Controllers and Raytracing")]
+    public GameObject myCamera;
+    public Camera vrCam;
+    public GameObject leftHand;
+    public GameObject rightHand;
+    public LineRenderer line;
+    public GameObject sphere;
+    public GameObject hitMarker;
+    LineRenderer mouseLine;
+    GameObject mouseVisLine;
+
+    // Main Menus & UI
+    [Header("Main UI")]
+    public Canvas introMenu;
+    public Canvas startMenu;
+    public Canvas continueToMapMenu;
+    public Canvas mapMenu;
+    public Canvas backReplayMenu;
+    public Canvas loadingMenu;
+    int activeMenu;
+    public bool menus;
+    public bool skipToMap;
+    Vector3 buttonSize;
+    Image[] mapButtonImages;
+
+    //Tutorial UI
+    [Header("Tutorial UI")]
+    public SpriteRenderer diverGraphic;
+    public TextMeshProUGUI firstText;
+    public TextMeshProUGUI secondText;
+    public TextMeshProUGUI thirdText;
+    public TextMeshProUGUI fourthText;
+    public Button startButton;
+    public Button secondButton;
+    public Button thirdButton;
+    public Button fourthButton;
+    public Button fifthButton;
+    public Button sixthButton;
+    public TextMeshProUGUI endTutorial;
+    public Button endTutStartButton;
+    //float transTime;
+   
+    // Videos & feature data in text form
+    [Header("Videos & Feature Data")]
+    public VideoClip CabombaSprings;
+    public TextAsset CabombaTs1; // Time stamps for feature 1
+    public TextAsset CabombaTs2; // Time stamps for feature 2
+    public VideoClip CreamOfWheat;
+    public TextAsset CreamOfWheatTs1; // etc
+    public TextAsset CreamOfWheatTs2;
+    public TextAsset CreamOfWheatTs3;
+    public VideoClip DeepHole;
+    public TextAsset DeepHoleTs1;
+    public VideoClip DiversionSprings;
+    public TextAsset DiversionTs1;
+    public TextAsset DiversionTs2;
+    public VideoClip OldDock;
+    public TextAsset OldDockTs1;
+    public TextAsset OldDockTs2;
+    public VideoClip RiverBed;
+    public TextAsset RiverBedTs1;
+    public TextAsset RiverBedTs2;
+
+    // Video management
+    [Header("Others")]
+    public UnityEngine.Video.VideoPlayer vp;
+    public VideoPlayer staticVp;
+    public Material backgroundMat;
+    public Material videoMat;
+    public Image fadeBlackIm;
+    bool vidPlaying;
+    bool vidPreparing;
+    VideoClip recentClip;
+    Texture sphereTex;
+    float radius;
+    MeshRenderer mrSphere;
+    Color startButDefCol;
+    
+    // Feature tracking data timestamps in data structure form
+    List<double[]> Cabombaf1; 
+    List<double[]> Cabombaf2;
+    List<double[]> CreamOfWheatf1;
+    List<double[]> CreamOfWheatf2;
+    List<double[]> CreamOfWheatf3;
+    List<double[]> DeepHolef1;
+    List<double[]> Diversionf1;
+    List<double[]> Diversionf2;
+    List<double[]> OldDockf1;
+    List<double[]> OldDockf2;
+    List<double[]> RiverBedf1;
+    List<double[]> RiverBedf2;
+
+    // Data structures to store all features for each video in a single list
+    List<double[]> CabombaFeatureActive = new List<double[]>();
+    List<double[]> CreamOfWheatFeatureActive = new List<double[]>();
+    List<double[]> DeepHoleFeatureActive = new List<double[]>();
+    List<double[]> DiversionFeatureActive = new List<double[]>();
+    List<double[]> OldDockFeatureActive = new List<double[]>();
+    List<double[]> RiverbedFeatureActive = new List<double[]>();
+
+    // Button tutorial stuff
+    float[] displayTextTimes = new float[5];
+    TextMeshProUGUI[] myDisplayTexts = new TextMeshProUGUI[4];
+    Button[] myTutorialButtons = new Button[5];
+
+    // Feature UI and vars
+    [Header("Features")]
+    public Texture[] featureImages = new Texture[21];
+    string[] featureTexts = new string[21];
+    float[] featureInfoHeight = new float[2] { 1.0f, 2.0f };
+    public RawImage ImageFeature;
+    public GameObject CanvasFeature;
+    public TextMeshProUGUI TextFeature;
+    public Button Button_NextPage;
+    float canvasFeatureWidth=0;
+    float canvasFeatureHeight = 0;
+    public GameObject helperPointer;
+    public GameObject myFish;
+    MeshRenderer coneRenderer;
+    int currentInfoIndex = 0; // Select Feature 
+    int NumberPages = 1; // Sf 
+    int parentPage = 1; // sf
+    bool QHelperPointer = false; // helper pointer
+    bool QCycleButtons = false;
+
+    bool QFadeFade = false; // for fading the fade to black screen
+    float timeFadeFade = 0;
+
+    bool QMapMenuDelay = false; // bug fix for ray cast hitting a button on the subsequent menu before user can see it
+
+    [Header("Timer")]
+    public bool Qtimer;
+    public TextMeshProUGUI timerText;
+
+    public Canvas StaticVpPlayer; // for DeepHole's only feature, a video playing
+    RawImage SVPImage;
+
+
+    //===============================================================================================================================================
+    // Start is called before the first frame update
+    void Start()
+    {
+   
+        // Hide fade to black transition canvas and helperpointer GameObject
+        fadeBlackIm.gameObject.SetActive(false); 
+        helperPointer.gameObject.SetActive(false);
+
+        // Get sphere that surrounds player and its radius, set its texture to the default blue/green gradient
+        mrSphere = sphere.GetComponent<MeshRenderer>();
+        radius = sphere.GetComponent<Renderer>().bounds.size.x; 
+        sphereTex = backgroundMat.mainTexture;
+
+        // Get feature popup menu's recttransform to adjust it (UI element, needs this to adjust sizes)
+        RectTransform rtcf = CanvasFeature.GetComponent<RectTransform>();
+        canvasFeatureHeight = rtcf.sizeDelta.y;
+        canvasFeatureWidth = rtcf.sizeDelta.x;
+        coneRenderer = hitMarker.GetComponent<MeshRenderer>();
+
+        //Hide all menus except first
+        MenuSetup();
+        activeMenu = 1;
+        startButDefCol = startButton.image.color;
+
+        //intitialize bools for VideoController()
+        vidPlaying = false;
+        vidPreparing = false;
+
+        // Store feature start and end times 
+        setFeatureActiveTimes();
+ 
+        // Parse timestamp data into data structures
+        Cabombaf1 = HandleTextAssets(CabombaTs1);
+        Cabombaf2 = HandleTextAssets(CabombaTs2);
+        CreamOfWheatf1 = HandleTextAssets(CreamOfWheatTs1);
+        CreamOfWheatf2 = HandleTextAssets(CreamOfWheatTs2);
+        CreamOfWheatf3 = HandleTextAssets(CreamOfWheatTs3);
+        DeepHolef1 = HandleTextAssets(DeepHoleTs1);
+        Diversionf1 = HandleTextAssets(DiversionTs1);
+        Diversionf2 = HandleTextAssets(DiversionTs2);
+        OldDockf1 = HandleTextAssets(OldDockTs1);
+        OldDockf2 = HandleTextAssets(OldDockTs2);
+        RiverBedf1 = HandleTextAssets(RiverBedTs1);
+        RiverBedf2 = HandleTextAssets(RiverBedTs2);
+
+        // Load button tutorial texts, buttons, and timestamps into data structures
+        myDisplayTexts[0] = firstText;
+        myDisplayTexts[1] = secondText;
+        myDisplayTexts[2] = thirdText;
+        myDisplayTexts[3] = fourthText;
+        displayTextTimes[0] = 0f;
+        displayTextTimes[1] = 6f;
+        displayTextTimes[2] = 12f;
+        displayTextTimes[3] = 20f;
+        displayTextTimes[4] = 26f;
+        myTutorialButtons[0] = secondButton;
+        myTutorialButtons[1] = thirdButton;
+        myTutorialButtons[2] = fourthButton;
+        myTutorialButtons[3] = fifthButton;
+        myTutorialButtons[4] = sixthButton;
+        //myTutorialButtons[5] = endTutStartButton;
+        
+        const string quote = "\"";
+        // Cabomba Spring
+        featureTexts[0] = "This is Cabomba Spring, also known as SnowGlobe Spring. Like all the San Marcos Springs, it is an outflow of water from the underground Edwards Aquifer.";
+        featureTexts[1] = "The Texas blind salamander lives inside the section of aquifer underneath San Marcos. Springs like this one are openings into the water-filled aquifer below.";
+        featureTexts[2] = "This is a dense mass of algae. It is green and stringy, made up of thousands of individual filaments, like strands of hair.";
+        featureTexts[3] = "The algae mass is home to lots of small animals like this damselfly nymph and grass shrimp. The algae itself forms its own micro-environment densely populated with invertebrates and even salamanders and fish.";
+        // cream of wheat
+        featureTexts[4] = "Spring Lake’s volunteer divers act as "+quote+"underWater gardeners"+quote+".They work to create and maintain habitat for the threatened &endangered species in Spring Lake.";
+        featureTexts[5] = "Volunteers control algal blooms, detritus accumulation, aquatic vegetation growth in the springs, and remove non-native plant species.";
+        featureTexts[6] = "Sunfish, also called 'perch', are some of the most colorful and common fish in Spring Lake. These opportunistic fish seek water bugs, snails, shrimp, and other invertebrates. They will eat smaller fish, as well.";
+        featureTexts[7] = "There are many different types of sunfish in Spring Lake, including Bluegill, Redbreast, Redear, Redspotted, Green, Longear, and Warmouth sunfish. All sunfish have a black gill spine, or ‘dot’ just behind their gills.";
+        featureTexts[8] = "This field of bubbling sand is one of the most active spring sites in the lake. Known as ‘Cream of Wheat Springs’ because of its boiling appearance, the water that comes out of the ground here is about 70o F. Each one of the" +
+            " sand bubbles is a place where an opening in the rock below is allowing spring water to jet up out of the Edwards Aquifer.";
+        // diversion
+        featureTexts[9] = "The Glass-bottom Boats on Spring Lake have been giving visitors a view of the springs since the late 1940’s. Today there are five historic boats in operation. All are fully electric and feature an 18ft glass pane allowing viewers to see into the crystal-clear water.";
+        featureTexts[10] = "This is Diversion Spring pipe. It was originally put in place by the Aquarena Springs theme park. Water flows straight up out of the cave at the bottom of the pipe and its flow is diverted to the side, keeping a current running through the old submarine theater area. An exploration of the cave spring was made in 2005. Press the next arrow to see the cave map.";
+        featureTexts[11] = "";
+        // riverbed
+        featureTexts[12] = "Like almost all lakes in Texas, Spring Lake was created by damming up a section of river. In this case, the upper half mile of the San Marcos River headwaters, in 1849. As a result, many trees which once grew on the banks of the river have been underwater for over 170 years. The trees absorb minerals from the spring water, which hardens and preserves them through a process called permineralization.";
+        featureTexts[13] = "This is a Largemouth bass, one of the best-known freshwater fish in the USA. Bass fishing is a common pastime and even a competitive sport. However, Spring Lake is a nature preserve and there is no fishing. These bass will often grow to weigh over five pounds. They will follow divers, hoping to catch a stirred-up crayfish or minnow.";
+        // old dock        
+        featureTexts[14] = "This structure was once a small boat dock in use during the days of the Aquarena Springs theme park. Today it is a popular place for turtles to bask on sunny days.";
+        featureTexts[15] = "The Aquarena Spring theme park started the glass-bottom boats and was famous for its underwater shows with mermaids and swimming pigs. Many other attractions were added in the 1950’s - 1970’s.";
+        featureTexts[16] = "Texas State University has owned the grounds of the old theme park since 1994. Many of the buildings and attractions are gone due to flooding over the past 40 years.";
+        featureTexts[17] = "Small schooling fish like this Blacktail shiner, along with tetras and minnows, are some of the most numerous types of fish in Spring Lake. They feed on tiny, plankton-size animals and in turn are eaten by larger fish such as bass and gar.";
+        featureTexts[18] = "Watch for tiny strings of bubbles rising from the plants in this area. Aquatic plant respiration & growth, as well as plant decay, produces gas bubbles that float to the surface throughout the day at Spring Lake.";
+        // deep hole
+        featureTexts[19] = "This is the widest spring opening in the ‘Deep Hole’ area of Spring Lake. It is about 27 to 28 feet below the surface, and the water pouring out of it comes from several hundred feet below ground. With its large size this is the spring most associated with an indigenous culture creation story related by the Miakan-Garza tribe of Coahuiltecans who live in the area.";
+        featureTexts[20] = "";
+
+        StaticVpPlayer.gameObject.SetActive(false);
+        SVPImage = StaticVpPlayer.GetComponentInChildren<RawImage>();
+    }
+
+
+    //===============================================================================================================================================
+    // Update is called once per frame
+    void Update()
+    {
+
+        // Fading out videos
+        if (QFadeVideo)
+        {
+            fadeBlackIm.gameObject.SetActive(true);
+            float endFadeTime = Time.time - timeFadeVideo;
+            fadeBlackIm.color = new Color(0, 0, 0, endFadeTime-1.0f);
+
+            if (endFadeTime >= 2f)
+            {
+                vp.Pause();
+                QFadeFade = true;
+                timeFadeFade = Time.time;
+                mrSphere.material = backgroundMat;
+                QFadeVideo = false;
+            } 
+        
+        }
+
+        if (QFadeFade)
+        {
+            float endFadeFade = Time.time - timeFadeFade;
+            fadeBlackIm.color = new Color(0, 0, 0, 1.0f - endFadeFade);
+
+            if (endFadeFade >= 1f)
+            {
+                vp.Stop();
+                QFadeFade = false;
+                fadeBlackIm.gameObject.SetActive(false);
+                backReplayMenu.gameObject.SetActive(true);
+            }
+
+        }
+
+        // INPUT Key U to skip to end of video
+        if (Input.GetKeyDown(KeyCode.U))
+        {
+            if (vp.isPlaying)
+            {
+                //uvp.time = vp.length - vp.length / 2f;
+                vp.time = vp.length - 5f;
+            }
+        }
+
+        // Play deep hole video when appropriate
+        if (currentInfoIndex == 20 && !vp.isPlaying)
+        {
+            StaticVpPlayer.gameObject.SetActive(true);
+            StaticVpPlayer.gameObject.transform.forward = vrCam.transform.forward;
+            StaticVpPlayer.gameObject.transform.position = CanvasFeature.transform.position-(CanvasFeature.transform.forward*2f);
+            staticVp.Play();
+        }
+        else
+        {
+            StaticVpPlayer.gameObject.SetActive(false);
+            staticVp.Stop();
+        }
+
+        // Show static video textures when appropriate
+        if (staticVp.isPlaying)
+        {
+            SVPImage.texture = staticVp.texture;
+            //TextFeature.texture = staticVp.texture;
+            if (staticVp.time > staticVp.length - 0.5f)
+            {
+                staticVp.Stop();
+            } else if (!vp.isPaused)
+            {
+                staticVp.Stop();
+            }
+        }
+
+        // Show helper pointer if feature active
+        HelperPointer();
+
+        // Button tutorial functions
+        HandleDiver();
+        CycleText(myDisplayTexts, displayTextTimes);
+
+        // Call PrepHandleFeatures every frame video is playing
+        // Start fade to black if video ended
+        if (vp.isPlaying)
+        {
+            vidPlaying = true;
+            PrepHandleFeatures();
+            if (vp.time > vp.length - 3f)
+            {
+                
+                QFadeVideo = true;
+                timeFadeVideo = Time.time;
+                vidPlaying = false;
+            }
+            
+        }
+
+        // Fish easter egg
+        if(OVRInput.GetDown(OVRInput.RawButton.Start))
+        {
+            myFish.transform.position = myCamera.transform.position + myCamera.transform.forward*0.5f;
+            myFish.SetActive(true);
+
+        }
+
+        // Shoot rays from mouse position, catch collisions (lets you click menu buttons with mouse)
+        Vector3 mousePos = Input.mousePosition;
+        RaycastHit thisHit;
+        Ray mouseRay;
+        mouseRay = vrCam.ScreenPointToRay(mousePos);
+        //mouseLine.SetPosition(0, vrCam.transform.position); // for showing a visible ray from the mouse location
+        //mouseLine.SetPosition(1, mouseRay.direction * 1000f);
+        if (Physics.Raycast(mouseRay, out thisHit))
+        {
+           CatchRays(thisHit);
+            
+        }
+
+        // Shoot rays from controller, catch collisions
+        Ray myRay;
+        myRay = new Ray(rightHand.transform.position, rightHand.transform.forward);
+        RaycastHit myHit;
+        if (Physics.Raycast(myRay, out myHit, 1000f))
+         {
+            CatchRays(myHit);
+         }   
+
+        // Load end menu when video done playing
+        videoController();
+
+        // Delay Map Menu Showing up after Back/Replay Menu to avoid double clicking bug
+        if (QMapMenuDelay)
+        {
+            Invoke("MapMenuDelay", 0.1f);
+        }
+
+        // Show video timer for debugging
+        if (Qtimer && vp.isPlaying)
+        {
+            timerText.gameObject.SetActive(true);
+            timerText.text = (vp.time).ToString();
+        } else
+        {
+            timerText.gameObject.SetActive(false);
+        }
+
+        // If a feature is currently showing, make the feature popup menu point towards the player
+        if (CanvasFeature.activeInHierarchy)
+        {
+            CanvasFeature.transform.forward = vrCam.transform.forward;
+        }
+    }
+
+
+    //=====================================================MY FUNCTIONS==============================================================================
+    //===============================================================================================================================================
+
+
+    //-------------------------------------------- FUNCTION: CatchRays
+    //-------------------------------------------- 
+    // Called if a ray collides with something
+    void CatchRays(RaycastHit myHit)
+    {     
+            // Make button vibrate if user hovering over button (but not clicked yet)
+            if (myHit.transform.gameObject.CompareTag("Menus") || myHit.transform.gameObject.CompareTag("TutorialMenus") ||
+            myHit.transform.gameObject.CompareTag("Cone"))
+            {
+                OVRInput.SetControllerVibration(0.05f, 0.01f, OVRInput.Controller.RTouch);
+                line.SetPosition(1, new Vector3(0, 0, Mathf.Abs(myHit.transform.position.z - line.GetPosition(0).z)));
+                //EndOfRay.gameObject.SetActive(true);
+                //EndOfRay.transform.position = line.GetPosition(1);
+                //RayParticles.Play();
+            }
+            else
+            {
+                //RayParticles.Stop();
+                //EndOfRay.gameObject.SetActive(false);
+                OVRInput.SetControllerVibration(0, 0, OVRInput.Controller.RTouch);
+                line.SetPosition(1, new Vector3(0, 0, 1000));
+            }
+
+            string hitName = myHit.transform.gameObject.name;
+            if ((OVRInput.GetDown(OVRInput.Button.SecondaryIndexTrigger) || OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger)) || Input.GetMouseButtonDown(0))
+            {
+
+            //Debug.Log("\nCollision: " + myHit.transform.gameObject.name);
+
+            SelectFeature(hitName);
+            CycleButtons(myTutorialButtons, hitName);
+
+            if (hitName.Contains("ButtonExit"))
+                {
+                    CanvasFeature.SetActive(false);
+                    vp.Play();
+                    hitMarker.transform.position += new Vector3(0, 0, 100);
+                    hitMarker.transform.localScale = new Vector3(70f, 70f, 70f);
+                    StaticVpPlayer.gameObject.SetActive(false);
+                }
+
+                if (hitName.Contains("NextPage"))
+                {
+                    if (currentInfoIndex < parentPage + NumberPages - 1)
+                    {
+                        currentInfoIndex++;
+                        Debug.Log("Showing " + currentInfoIndex);
+                        ShowFeatureInfo(currentInfoIndex);
+                        if (currentInfoIndex == parentPage + NumberPages - 1)
+                        {
+                            Button_NextPage.gameObject.SetActive(false);
+                        }
+                    }
+                    else
+                    {
+                        Button_NextPage.gameObject.SetActive(false);
+                    }
+                }
+
+                
+                if (myHit.transform.gameObject.name.Contains("endTutStartButton"))
+                {
+                    endTutStartButton.gameObject.SetActive(false);
+                    continueToMapMenu.gameObject.SetActive(true);
+                }
+
+                if (myHit.transform.gameObject.name.Contains("Restart"))
+                {
+                    MenuSetup();
+                }
+                
+
+                if (myHit.transform.gameObject.CompareTag("SphereEnclosingWalls")) // Get collisions on sphere
+                {
+                    FindPointOnSphere(myHit);
+                }
+                else if (myHit.transform.gameObject.CompareTag("Menus")) // Button hit event
+                {
+                    MenuController(myHit.transform.gameObject);
+                }
+            }
+
+            
+           
+        
+    }
+    
+    //-------------------------------------------- FUNCTION: CycleText
+    //-------------------------------------------- 
+    // Shows tutorial texts and fades out
+    bool QStartTut = false;
+    bool QCycleText = false;
+    float timeStartCycleText = 0f;
+    void CycleText(TextMeshProUGUI[] myTexts, float[] displayTimes)
+    {
+        //displaytimes [0,10,22,45,73]
+        if(QCycleText)
+        {
+            for (int i = 0; i < myTexts.Length; i++)
+            {
+                float elapsedTime = (Time.time - timeStartCycleText);
+                if (elapsedTime >= displayTimes[i] && elapsedTime<displayTimes[i+1])
+                {
+                    myTexts[i].gameObject.SetActive(true);
+                    if(elapsedTime>(displayTimes[i+1]-2))
+                    {
+                        //fade for 3 seconds
+                        // (display-3,0)  (display,1)
+
+                        float alpha = (1f - 0f) / (2f) * (elapsedTime - displayTimes[i + 1]) + 1f;
+                        myTexts[i].faceColor= new Color(1, 1, 1, 1.0f - alpha);
+                    }
+                }
+                if(elapsedTime>displayTextTimes[displayTextTimes.Length-1])
+                {
+                    QCycleText = false;
+                    QCycleButtons = true;
+                    for(int k=0;k<myTexts.Length;k++)
+                    {
+                        myTexts[i].gameObject.SetActive(false);
+                    }
+                    secondButton.gameObject.SetActive(true);
+                }
+             }
+        }
+    }
+
+    //-------------------------------------------- FUNCTION: CycleButtons
+    //-------------------------------------------- 
+    // Shows tutorial button and waits for user input
+    void CycleButtons(Button[] myButtons,string hitName)
+    {
+        if (QCycleButtons)
+        {
+            for (int i = 0; i < myButtons.Length; i++)
+            {
+                if (hitName == myButtons[i].name)
+                {
+                    myButtons[i].gameObject.SetActive(false);
+                    if (i < myButtons.Length - 1)
+                    {
+                        myButtons[i + 1].gameObject.SetActive(true);
+                    }
+                    else
+                    {
+                        endTutStartButton.gameObject.SetActive(true);
+
+                        //Start button is being shown
+                    }
+                }
+            }
+        }
+
+    }
+
+    //-------------------------------------------- FUNCTION: FadeDiver
+    //-------------------------------------------- 
+    // Begins tutorial sequence
+    float timeStartDiver = 0;
+    void FadeDiver()
+    {
+        QStartTut = true;
+        timeStartDiver = Time.time;
+    }
+
+    //-------------------------------------------- FUNCTION: HandleDiver
+    //-------------------------------------------- 
+    // Fades the diver graphic
+    void HandleDiver()
+    {
+        if(QStartTut)
+        {
+            float alpha = (Time.time - timeStartDiver) / 2;
+            
+            if (alpha <1)
+            {
+                //Debug.Log("OUT: ALPHA < 1");
+                diverGraphic.color = new Color(1, 1, 1, 1.0f - alpha);
+              //  startButton.image.color = new Color(1, 1, 1, 1.0f - alpha);
+            }
+            else
+            {
+                QStartTut = false;
+                QCycleText = true;
+                timeStartCycleText = Time.time;
+            }            
+        }
+    }
+
+    //-------------------------------------------- FUNCTION: ShowFeatureInfo
+    //-------------------------------------------- 
+    // Sets feature canvas size
+    void ShowFeatureInfo(int index)
+    {
+        CanvasFeature.SetActive(true);
+        CanvasFeature.transform.position = hitMarker.transform.position-new Vector3(3,0,2);
+        CanvasFeature.transform.forward = myCamera.transform.forward;
+        vp.Pause();
+        RectTransform rtf = ImageFeature.GetComponent<RectTransform>();
+        if (featureImages[index] != null)
+        {
+          
+            rtf.sizeDelta = new Vector2(rtf.sizeDelta.x, rtf.sizeDelta.x * featureImages[index].height / featureImages[index].width);
+            CanvasFeature.GetComponentInChildren<RawImage>().texture = featureImages[index];
+            rtf.localPosition = new Vector3(0, canvasFeatureHeight/2.0f-rtf.sizeDelta.y/2.0f-20f, 0);
+            TextFeature.GetComponent<RectTransform>().localPosition = new Vector3(0, canvasFeatureHeight/2.0f-TextFeature.GetComponent<RectTransform>().sizeDelta.y/2.0f-rtf.sizeDelta.y-25f , 0);
+            
+
+        }
+        else if (index == 20)
+        {
+            
+        }
+        else
+        {
+            rtf.sizeDelta = new Vector2(rtf.sizeDelta.x, 0);
+            CanvasFeature.GetComponentInChildren<RawImage>().texture = featureImages[index];
+            rtf.localPosition = new Vector3(0, canvasFeatureHeight / 2.0f - rtf.sizeDelta.y / 2.0f - 20f, 0);
+            TextFeature.GetComponent<RectTransform>().localPosition = new Vector3(0, canvasFeatureHeight / 2.0f - TextFeature.GetComponent<RectTransform>().sizeDelta.y / 2.0f - rtf.sizeDelta.y - 25f, 0);
+
+        }
+        CanvasFeature.GetComponentInChildren<TextMeshProUGUI>().text = featureTexts[index];
+
+        // For playing video
+        
+    }
+
+    //-------------------------------------------- FUNCTION: SelectFeature
+    //-------------------------------------------- 
+    // Set number of UI pages based on feature cone's name when called
+    void SelectFeature(string hitName)
+    {
+
+        if(hitName.Contains("features"))
+        {
+            hitMarker.transform.localScale = new Vector3(7, 7, 7);
+           
+            Button_NextPage.gameObject.SetActive(false);
+            NumberPages = 1;
+            string[] pages = hitName.Split('_');
+           
+            int atIndex = int.Parse(pages[2]);
+            parentPage = atIndex;
+            Debug.Log("parentPage : " + parentPage);
+            if(pages.Length>3)
+            {
+                NumberPages = pages.Length - 2;
+                Button_NextPage.gameObject.SetActive(true);
+            }
+            ShowFeatureInfo(atIndex);
+            currentInfoIndex = atIndex;
+            
+
+        }
+    }
+
+    //-------------------------------------------- FUNCTION: MenuSetup
+    //-------------------------------------------- 
+    // Hides all menus except first
+    void MenuSetup()
+    {
+        introMenu.gameObject.SetActive(menus);
+        startMenu.gameObject.SetActive(false);
+        continueToMapMenu.gameObject.SetActive(false);
+        mapMenu.gameObject.SetActive(false);
+        backReplayMenu.gameObject.SetActive(false);
+        loadingMenu.gameObject.SetActive(false);
+
+        if (skipToMap)
+        {
+            introMenu.gameObject.SetActive(false);
+            mapMenu.gameObject.SetActive(true);
+        }
+    }
+
+    //-------------------------------------------- FUNCTION: MenuController
+    //-------------------------------------------- 
+    // Selects active menu based on name of button hit
+    void MenuController(GameObject hit)
+    {
+
+        string name = hit.name;
+        Debug.Log("Menu Controller:" + hit.name);
+
+        // Control first 3 menus, map selection, 360 video playing
+        if (name == "Button - Agree & Continue")
+        {
+            introMenu.gameObject.SetActive(false);
+            startMenu.gameObject.SetActive(true);
+            diverGraphic.gameObject.SetActive(true);
+            activeMenu = 2;
+            Invoke("FadeDiver", 5f);
+        } else if (name == "endTutStartButton") 
+        {
+            startMenu.gameObject.SetActive(false);
+            continueToMapMenu.gameObject.SetActive(true);
+            activeMenu = 3;
+        } else if (name == "Button - Continue to Map")
+        {
+            continueToMapMenu.gameObject.SetActive(false);
+            QMapMenuDelay = true;
+            activeMenu = 4;
+        } else if (name == "CabombaSprings")
+        {
+            activeMenu = 5;
+            vp.clip = CabombaSprings;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "CreamofWheat")
+        {
+            activeMenu = 6;
+            vp.clip = CreamOfWheat;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "DeepHole")
+        {
+            activeMenu = 7;
+            vp.clip = DeepHole;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "DiversionSprings")
+        {
+            activeMenu = 8;
+            vp.clip = DiversionSprings;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "OldDock")
+        {
+            activeMenu = 9;
+            vp.clip = OldDock;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "RiverBed")
+        {
+            activeMenu = 10;
+            vp.clip = RiverBed;
+            mapMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "Replay")
+        {
+            backReplayMenu.gameObject.SetActive(false);
+            videoPrepare();
+        } else if (name == "BackToMap")
+        {
+            backReplayMenu.gameObject.SetActive(false);
+            activeMenu = 4;
+            QMapMenuDelay = true;
+        }
+
+    }
+
+    //---------------------------------FUNCTION: MapMenuDelay
+    //
+    void MapMenuDelay()
+    {
+        mapMenu.gameObject.SetActive(true);
+        QMapMenuDelay = false;
+    }
+
+    //-------------------------------------------- FUNCTION: FindPointOnSphere
+    //-------------------------------------------- 
+    // Caclulates the point on the sphere if raycast hit
+    void FindPointOnSphere(RaycastHit myHit)
+    {
+        Vector3 collisionpt = myHit.point - rightHand.transform.position; // Vector of right hand to collision point
+        collisionpt = Vector3.Normalize(collisionpt); // Normalize result
+        Vector3 spherept = collisionpt * radius; // Multiply by radius
+      //should be sphere change!  hitMarker.transform.position = spherept; // Show this point
+    }
+
+    //-------------------------------------------- FUNCTION: videoPrepare
+    //-------------------------------------------- 
+    // Starts vid preparation, shows loading menu
+    void videoPrepare()
+    {
+        vp.Prepare();
+        
+        vidPreparing = true;
+        loadingMenu.gameObject.SetActive(true);
+    }
+
+    //-------------------------------------------- FUNCTION: videoController
+    //-------------------------------------------- 
+    // Hide menus and play video; 
+    // stop video, reset sphere texture, and show relevant menus
+    bool QFadeVideo = false;
+    float timeFadeVideo = 0;
+    void videoController()
+    {
+
+        if (vidPreparing == true && vp.isPrepared)
+        {
+            //Debug.Log("Playing Video: " + vp.clip.name);
+            vidPreparing = false;
+            loadingMenu.gameObject.SetActive(false);
+            vp.Play();
+            mrSphere.material = videoMat;
+            //mrSphere.material.mainTexture = vp.texture;
+        }
+
+        /*
+        if (vidPlaying == true && !vp.isPlaying && !vp.isPaused)
+        {
+            vidPlaying = false;
+            vp.Stop();
+        }
+        */
+        
+    }
+
+    //-------------------------------------------- FUNCTION: HandleTextAssets
+    //-------------------------------------------- 
+    // Parses text file inputs into data structures
+    List<double[]> HandleTextAssets (TextAsset timestamps)
+    {
+        List<double[]> times = new List<double[]>();
+        string[] lines = timestamps.text.Split('\n');
+        for (int i = 0; i < lines.Length-1; i++)
+        {
+            string[] coord = lines[i].Split(',');
+            double[] divtime = new double[4];
+            //Debug.Log(coord[3]);
+            for (int j = 0; j < coord.Length; j++)
+            {
+                //Debug.Log("rouble " + i + "," + j);
+                divtime[j] = Double.Parse(coord[j]);
+            }
+            times.Add(divtime);
+        }
+        return times;
+    }
+
+    //-------------------------------------------- FUNCTION: PrepHandleFeatures
+    //-------------------------------------------- 
+    // Calls HandleFeatures() and passes the correct featureName and timestamps, called every frame in update
+    void PrepHandleFeatures()
+    {
+        string currVid = vp.clip.name;
+
+        if (currVid == "CabombaColored") // Features at 00:10 and 00:29, stationary
+        {
+            HandleFeatures(Cabombaf1,"features_0_0_1");
+            HandleFeatures(Cabombaf2,"features_1_2_3");
+            showFeatureCone(CabombaFeatureActive);
+        } else if (currVid == "CreamOfWheatColored") // 3 features at 00:01, 00:26, 00:56 (all stationary)
+        {
+            HandleFeatures(CreamOfWheatf1,"features_2_4_5");
+            HandleFeatures(CreamOfWheatf2, "features_3_6_7");
+            HandleFeatures(CreamOfWheatf3, "features_4_8");
+            showFeatureCone(CreamOfWheatFeatureActive);
+        } else if (currVid == "DeepHoleColored") // Feature at 00:34 (stationary)
+        {
+            HandleFeatures(DeepHolef1, "features_11_19_20");
+            showFeatureCone(DeepHoleFeatureActive);
+        } else if (currVid == "DiversionColored") // Features at 00:15 (cam + feature move), 1:20 (cam moves)
+        {
+            HandleFeatures(Diversionf1, "features_5_9");
+            HandleFeatures(Diversionf2, "features_6_10_11");
+            showFeatureCone(DiversionFeatureActive);
+        } else if (currVid == "OldDockColored") // Features at 00:06, 00:21 (all stationary)
+        {
+            HandleFeatures(OldDockf1, "features_9_14_15_16");
+            HandleFeatures(OldDockf2, "features_10_17_18");
+            showFeatureCone(OldDockFeatureActive);
+        } else if (currVid == "RiverBedColored") // Features 00:08, 00:36 (all stationary)
+        {
+            HandleFeatures(RiverBedf1, "features_7_12");
+            HandleFeatures(RiverBedf2, "features_8_13");
+            showFeatureCone(RiverbedFeatureActive);
+        } 
+    }
+
+    //-------------------------------------------- FUNCTION: HandleFeatures
+    //-------------------------------------------- 
+    // Put hitMarker cone in scene at correct positions and times, called every frame by PrepHandleFeatures() 
+    void HandleFeatures(List<double[]> timestamps,string featureName)
+    {
+        if (vp.time > timestamps[0][3] && vp.time <= timestamps[timestamps.Count-1][3])
+        {
+            
+            for (int k = 0; k < timestamps.Count - 1; k++)
+            {
+                double dt = timestamps[k + 1][3] - timestamps[k][3];
+                //if (vp.time > timestamps[k][3] && vp.time <= timestamps[k + 1][3])
+                //{
+                    hitMarker.name = featureName;
+                    double m = (timestamps[k + 1][0] - timestamps[k][0]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double atx = m * (vp.time - timestamps[k][3]) + timestamps[k][0];
+                    m = (timestamps[k + 1][1] - timestamps[k][1]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double aty = m * (vp.time - timestamps[k][3]) + timestamps[k][1];
+                    m = (timestamps[k + 1][2] - timestamps[k][2]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double atz = m * (vp.time - timestamps[k][3]) + timestamps[k][2];
+                    hitMarker.transform.position = 0.95f * new Vector3((float)atx, (float)aty, (float)atz);
+                    hitMarker.transform.forward = hitMarker.transform.position;
+                    hitMarker.transform.Rotate(new Vector3(90, 0, 0));
+                    hitMarker.transform.Rotate(hitMarker.transform.position, 45);
+                //} 
+            }
+        }
+
+        /*
+         * 
+         * 
+         * if (!vp.isPlaying)
+            {
+                QHelperPointer = false;
+            }
+         * 
+         * 
+         */
+    }
+
+
+    //-------------------------------------------- FUNCTION: showFeatureCone
+    //-------------------------------------------- // Called by PrepHandleFeature every frame
+    //-------------------------------------------- // Passed a list of start and end times for every feature in a clip
+    //
+    void showFeatureCone(List<double[]> featureStartEnd)
+    {
+        // Get count of features
+        double count = featureStartEnd.Count;
+        //Debug.Log(" Count: " + count);
+
+        // Show if in the right time frame
+        for (int i=0; i < count; i++)
+        {
+            
+            if(vp.time > featureStartEnd[i][0] && vp.time < featureStartEnd[i][1])
+            {
+                hitMarker.gameObject.SetActive(true);
+                helperPointer.gameObject.SetActive(true);
+                QHelperPointer = true;
+            }
+
+            if (count == 2) // 2 features
+            {
+                if (i == 1)
+                {
+                    if (vp.time > featureStartEnd[i-1][1] && vp.time < featureStartEnd[i][0])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                    if (vp.time > featureStartEnd[i][1])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                } 
+            } else if (count == 3) // 3 features
+            {
+                if (i == 1)
+                {
+                    if (vp.time > featureStartEnd[i - 1][1] && vp.time < featureStartEnd[i][0])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                    if (vp.time > featureStartEnd[i][1])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                } else if (i == 2)
+                {
+                    if (vp.time > featureStartEnd[i - 2][1] && vp.time < featureStartEnd[i-1][0])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                    if (vp.time > featureStartEnd[i-1][1] && vp.time < featureStartEnd[i][0])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                    if (vp.time > featureStartEnd[i][1])
+                    {
+                        hitMarker.gameObject.SetActive(false);
+                        helperPointer.gameObject.SetActive(false);
+                        QHelperPointer = false;
+                    }
+                }
+            } else if(count == 1)
+            {
+                if (vp.time > featureStartEnd[i][1])
+                {
+                    hitMarker.gameObject.SetActive(false);
+                    helperPointer.gameObject.SetActive(false);
+                    QHelperPointer = false;
+                }
+            }
+        }
+    }
+
+
+    //-------------------------------------------- FUNCTION: setFeatureActiveTimes
+    //-------------------------------------------- // Defines the lists of feature start and end times
+    //
+    void setFeatureActiveTimes()
+    {
+        double[] arr;
+
+        //Cabomba
+        CabombaFeatureActive.Add(new double[] { 10, 20 }); // f1 of Cabomba
+        CabombaFeatureActive.Add(new double[] { 29, 39 }); // f2 of cabomba
+
+        // Cream of Wheat
+        CreamOfWheatFeatureActive = new List<double[]>();
+        arr = new double[] { 1, 11 }; // Cream of wheat f1
+        CreamOfWheatFeatureActive.Add(arr);
+        arr = new double[] { 26, 36 }; // Cream of wheat f2
+        CreamOfWheatFeatureActive.Add(arr);
+        arr = new double[] { 56, 66 }; // Cream of wheat f3
+        CreamOfWheatFeatureActive.Add(arr);
+
+        // Deep Hole
+        DeepHoleFeatureActive = new List<double[]>();
+        arr = new double[] { 39, 48 }; // Deephole f1
+        DeepHoleFeatureActive.Add(arr);
+
+        // Diversion
+        DiversionFeatureActive = new List<double[]>();
+        arr = new double[] { 15, 25 }; // Diversion f1
+        DiversionFeatureActive.Add(arr);
+        arr = new double[] { 80, 88 }; // Diversion f2 
+        DiversionFeatureActive.Add(arr);
+
+        // Old Dock
+        OldDockFeatureActive = new List<double[]>();
+        arr = new double[] { 6, 22 }; // Old Dock f1
+        OldDockFeatureActive.Add(arr);
+        arr = new double[] { 24, 33 }; ; // Old Dock f2
+        OldDockFeatureActive.Add(arr);
+
+        // Riverbed
+        RiverbedFeatureActive = new List<double[]>();
+        arr = new double[] { 8, 18 }; // Riverbed f1
+        RiverbedFeatureActive.Add(arr);
+        arr = new double[] { 36, 43 }; // Riverbed f2
+        RiverbedFeatureActive.Add(arr);
+
+    }
+
+
+    //-------------------------------------------- FUNCTION: HelperPointer
+    //-------------------------------------------- 
+    // Points helperPointer game object at the feature cone (hit marker)
+    void HelperPointer()
+    {
+        if (QHelperPointer)
+        {
+            helperPointer.transform.position = myCamera.transform.position + myCamera.transform.forward * 1 + myCamera.transform.right * 0.4f + myCamera.transform.up * 0.3f;
+            helperPointer.transform.forward = hitMarker.transform.position - helperPointer.transform.position;
+            helperPointer.transform.Rotate(new Vector3(1, 0, 0), -90);
+        }
+    }
+
+    //================================================================================================================================================
+
+    /*
+        //===============================================================================================================================================
+     
+        Rotate cam using wasd
+        if (Input.GetKeyDown(KeyCode.W))
+        {
+            vrCam.transform.Rotate(new Vector3(1, 0, 0), -10);
+        }
+        if (Input.GetKeyDown(KeyCode.S))
+        {
+            vrCam.transform.Rotate(new Vector3(1, 0, 0), 10);
+        }
+        if (Input.GetKeyDown(KeyCode.A))
+        {
+            vrCam.transform.Rotate(new Vector3(0,1,0), -10);
+        }
+        if (Input.GetKeyDown(KeyCode.D))
+        {
+            vrCam.transform.Rotate(new Vector3(0, 1, 0), 10);
+        }
+        
+    if (backReplayMenu.gameObject.activeInHierarchy)
+        {
+
+        }
+
+
+
+
+        //GameObject compare tag and line.setposition
+
+                    // Adjust ray to stop at menu instead of going thru
+                    float x_length = line.transform.position.x;
+                    if (myHit.transform.gameObject.CompareTag("Menus"))
+                    {
+                        line.SetPosition(1, new Vector3(myHit.transform.position.x, line.transform.position.y, line.transform.position.z));
+                    } else
+                    {
+                        line.SetPosition(1, new Vector3(x_length, line.transform.position.y, line.transform.position.z));
+                    }
+
+
+                // Write collision points and time to file
+
+                                // Write collision points and time to file
+                                //if (cvp.time <= featureEnd && cvp.time >= featureStart)
+                                //{
+                                    //sw.WriteLine(spherept.x+","+spherept.y+","+spherept.z + "," + vp.time);
+                                //}
+
+
+                // Adjust vp time for fast forwarding
+
+                //cvp.time += startLater; // Start video later 
+                //featureStart -= startLater; // because videoplayer.time now starts at 0, not at time + startLater
+                //featureEnd -= startLater;
+
+
+                // Old switch statements videos
+
+                  if (activeMenu == 4)
+                    {
+                        mapMenu.gameObject.SetActive(false);
+
+                        if (name == "CabombaSprings")
+                        {
+                            activeMenu = 5;
+                            vp.clip = CabombaSprings;
+
+                        } else if (name == "CreamofWheat")
+                        {
+                            activeMenu = 6;
+                            vp.clip = CreamofWheat;
+
+                        } else if (name == "DeepHole")
+                        {
+                            activeMenu = 7;
+                            vp.clip = DeepHole;
+
+                        } else if (name == "DiversionSprings")
+                        {
+                            vp.clip = DiversionSprings;
+                            activeMenu = 8;
+                        } else if (name == "OldDock")
+                        {
+                            vp.clip = OldDock;
+                            activeMenu = 9;
+                        } else if (name == "RiverBed")
+                        {
+                            vp.clip = RiverBed;
+                            activeMenu = 10;
+                        }
+
+                    }
+
+
+                // File IO
+
+                // Stop file writing
+                //if (cvp.time > featureEnd) {sw.Close();}
+
+                // Signal start writing to output 
+                //if (OVRInput.GetDown(OVRInput.RawButton.A))
+
+                // Signal end writing to output 
+                //if (OVRInput.GetDown(OVRInput.RawButton.B))
+
+
+
+                //vp.clip = DeepHole;
+                //RenderTexture.active = vp.targetTexture;
+
+                //GL.Clear(true, true, Color.black);
+                //RenderTexture.active = null;
+
+                // File IO Stuff
+                //StreamWriter sw;
+                //public string filename;
+                //public TMPro.TMP_Text countdown;
+                //public double featureStart;
+                //public double featureEnd;
+                //public double startLater;
+
+                //sw = new StreamWriter(filename);
+                //QWriteToFile = true;
+
+
+                // Speed up video - X on Controller
+                    if (OVRInput.GetDown(OVRInput.RawButton.X))
+                    {
+                        if(vp.playbackSpeed == 1f)
+                        {
+                            vp.playbackSpeed = vp.playbackSpeed* 10.0f;
+                    } else
+                    {
+                        vp.playbackSpeed = 1f;
+                    }
+                    }
+
+
+
+                // Cast Ray from mouse
+                 Cast ray from mouse for clicking through menu
+                    if (Input.GetKeyDown(KeyCode.Mouse0))
+                    {
+                        RaycastHit hit;
+                        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+
+                        if (Physics.Raycast(ray, out hit))
+                        {
+                            Transform objectHit = hit.transform;
+                            Debug.Log("Mouse Ray: " + hit.transform.gameObject.name);
+                            //MenuController(objectHit.gameObject);
+                        }
+                    }
+
+
+                //countdown.text = Mathf.Floor((float)vp.time).ToString();
+
+
+                 KHOI Video solution
+                    if(vp.isPrepared && !vp.isPlaying)
+                    {
+                        vp.Play();
+                    }
+                    if(vp.isPlaying)
+                    {
+                        mrSphere.material.mainTexture = vp.texture;
+                    }
+
+
+            // Load feature data from resources
+            CabombaTs1 = Resources.Load<TextAsset>("/TimeStamps/Cabomba264f1");
+            CabombaTs2 = Resources.Load<TextAsset>("/TimeStamps/Cabomba264f2");
+            CreamOfWheatTs1 = Resources.Load<TextAsset>("/TimeStamps/CreamOfWheatf1");
+            CreamOfWheatTs2 = Resources.Load<TextAsset>("/TimeStamps/CreamOfWheatf2");
+            CreamOfWheatTs3 = Resources.Load<TextAsset>("/TimeStamps/CreamOfWheatf3");
+            DeepHoleTs1 = Resources.Load<TextAsset>("/TimeStamps/DeepHoleF");
+            DiversionTs1 = Resources.Load<TextAsset>("/TimeStamps/Diversion264f1");
+            DiversionTs1 = Resources.Load<TextAsset>("/TimeStamps/Diversion264f2");
+            OldDockTs1 = Resources.Load<TextAsset>("/TimeStamps/OldDockf1");
+            OldDockTs2 = Resources.Load<TextAsset>("/TimeStamps/OldDockf2");
+            RiverBedTs1 = Resources.Load<TextAsset>("/TimeStamps/Riverbedf1");
+            RiverBedTs2 = Resources.Load<TextAsset>("/TimeStamps/Riverbedf2");
+
+        // Load videos in from Resources
+            CabombaSprings = Resources.Load<VideoClip>("CabombaComp");
+            CreamofWheat = Resources.Load<VideoClip>("CreamOfWheatComp");
+            DeepHole = Resources.Load<VideoClip>("DeepHoleComp");
+            DiversionSprings = Resources.Load<VideoClip>("DiversionSpringsComp");
+            OldDock = Resources.Load<VideoClip>("OldDockComp");
+            RiverBed = Resources.Load<VideoClip>("RiverbedComp");
+
+     void HandleFeatures(List<double[]> timestamps,string featureName)
+    {
+        if (vp.time > timestamps[0][3] && vp.time <= timestamps[^1][3])
+        {
+            
+            for (int k = 0; k < timestamps.Count - 1; k++)
+            {
+                double dt = timestamps[k + 1][3] - timestamps[k][3];
+                if (vp.time > timestamps[k][3] && vp.time <= timestamps[k + 1][3])
+                {
+                    hitMarker.name = featureName;
+                    double m = (timestamps[k + 1][0] - timestamps[k][0]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double atx = m * (vp.time - timestamps[k][3]) + timestamps[k][0];
+                    m = (timestamps[k + 1][1] - timestamps[k][1]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double aty = m * (vp.time - timestamps[k][3]) + timestamps[k][1];
+                    m = (timestamps[k + 1][2] - timestamps[k][2]) / (timestamps[k + 1][3] - timestamps[k][3]);
+                    double atz = m * (vp.time - timestamps[k][3]) + timestamps[k][2];
+                    hitMarker.transform.position = 0.95f * new Vector3((float)atx, (float)aty, (float)atz);
+                    hitMarker.transform.forward = hitMarker.transform.position;
+                    hitMarker.transform.Rotate(new Vector3(90, 0, 0));
+                    hitMarker.transform.Rotate(hitMarker.transform.position, 45);
+                } 
+            }
+        }
+
+        /*
+         * 
+         * 
+         * if (!vp.isPlaying)
+            {
+                QHelperPointer = false;
+            }
+         * 
+         * 
+         */
+}
